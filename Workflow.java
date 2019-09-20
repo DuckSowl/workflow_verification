@@ -19,7 +19,9 @@ import org.processmining.models.graphbased.directed.bpmn.elements.Activity;
 import org.processmining.models.graphbased.directed.bpmn.elements.Gateway;
 import org.processmining.models.graphbased.directed.bpmn.elements.Gateway.GatewayType;
 
+import course.project.exceptions.InvalidLoopException;
 import course.project.exceptions.LackOfSynchronizationException;
+import course.project.exceptions.WorkflowVerificationException;
 
 public class Workflow extends BPMNDiagramImpl {
 
@@ -35,7 +37,7 @@ public class Workflow extends BPMNDiagramImpl {
 
 	public boolean isWorkflowCorrect () {
 		return (isSourceUnique() &&
-				isAllNodesReachable() &&
+				// isAllNodesReachable() &&
 				checkingGateways());
 	}
 	
@@ -87,11 +89,11 @@ public class Workflow extends BPMNDiagramImpl {
 		for (BPMNNode node : getNodes()) {
 			if (node instanceof Gateway) {
 				switch (((Gateway) node).getGatewayType()) {
-					case DATABASED: 
+					case DATABASED: // Splitting node
 						if (getOutEdges(node).size() < 2) {
 							return false;
 						} break;
-					case PARALLEL: 
+					case PARALLEL: // Merging node
 						if (getOutEdges(node).size() < 1) {
 							return false;
 						} break;
@@ -103,19 +105,8 @@ public class Workflow extends BPMNDiagramImpl {
 		return true;
 	}
 	
-	private Loops loops = new Loops();
-	
-	public void findLoops() {
-		try {
-			loops.findLoops();
-		} catch (Exception e) {
-			System.out.println("Loops search failed!");
-			e.printStackTrace();
-		}
-	}
-	
 	void debugPrintLoops() {
-		System.out.println(loops.toString());
+		System.out.println(loops.size());
 	}
 	
 	// ABC
@@ -151,10 +142,17 @@ public class Workflow extends BPMNDiagramImpl {
 		// }
 	}
 	
+	public void verify() throws WorkflowVerificationException {
+		flatLoops();
+		debugPrintLoops();
+		bfsModified();
+		restoreLoops();
+	}
+	
 	/** Calculates condition for node according to incoming edges.
 	 *  Checks if 'node' have structural conflicts (deadlock or lack of synchronization
 	 *  If node does't have structural conflicts calculates conditions for out edges. */
-	public void verifyStructuralConflicts(BPMNNode node) {
+	private void verifyStructuralConflicts(BPMNNode node) {
 		if (node == source) { 
 			Cn.put(node, new Disjunction());
 			
@@ -197,28 +195,23 @@ public class Workflow extends BPMNDiagramImpl {
 		return splitNodeNum.get(node);
 	}
 	
-	/** Adds next number for a splitting node in num */
+	/** Adds next number for a splitting node in splitNodeNum */
 	private void addNodeNum(BPMNNode node, int number) {
 		splitNodeNum.put(node, number);
 	}
 	
 	/** Returns splitting edge condition in boolean */
-	private boolean getEdgeBool(BPMNEdge edge) {
+	protected boolean getEdgeBool(BPMNEdge edge) {
 		return edge.getLabel() == "true";
 	}
 	
-	public boolean isSplitingNode(BPMNNode node) {
-		if (node instanceof Gateway) {
-			return ((Gateway) node).getGatewayType() == GatewayType.DATABASED;
-		}
-		return false;
+	/** Returns true if node is a splitting gateway */
+	private boolean isSplitingNode(BPMNNode node) {
+		return (node instanceof Gateway) && 
+				((Gateway) node).getGatewayType() == GatewayType.DATABASED;
 	}
 	
-	public void debug(String s) {
-		System.out.print(s);
-	}
-	
-	public void bfsModified() throws LackOfSynchronizationException {
+	private void bfsModified() throws LackOfSynchronizationException {
 		HashSet<BPMNNode> visitedNodes = new HashSet<>();
 		HashSet<BPMNEdge<BPMNNode, BPMNNode>> visitedEdges = new HashSet<>();
 
@@ -241,6 +234,8 @@ public class Workflow extends BPMNDiagramImpl {
 				}
 			}
 			
+			
+			
 			visitedNodes.add(node);
 			for (BPMNEdge to : getOutEdges(node)) {
 				visitedEdges.add(to);
@@ -254,118 +249,223 @@ public class Workflow extends BPMNDiagramImpl {
 			verifyStructuralConflicts(node);
 		}
 		
-		debug(" done\n");
+		System.out.println(" done\n");
 	}
-		
-	class Loops {
-		Set<Loop> loops = new HashSet<>();
-		
-		public void findLoops() throws Exception {				
-			if (!isWorkflowCorrect()) {
-				throw new Exception("Not correct workflow!");
-			}
-			
-			ArrayList<BPMNNode> route = new ArrayList<>();
-			
-			Stack<BPMNNode> next = new Stack<>();
-			next.add(source);
-			
-			Set<BPMNNode> left = new HashSet<>();
-			Set<BPMNNode> visited = new HashSet<>();
-			
-			while (!next.isEmpty()) {
-				route.add(next.peek());
-				
-				boolean stepBack = true;
-				System.out.println("Entered: " + route.get(route.size() - 1).getLabel());
-				for (BPMNEdge edge :  getOutEdges(next.pop())) {
-					BPMNNode to = (BPMNNode)edge.getTarget();
-					if (visited.add(to)) {
-						stepBack = false;
-						next.add(to);
-					} else {
-						if (!left.contains(to)) {
-							addLoop(route, to);
-						}
-					}
-				}
-				
-				stepBack: while (true) {
-					if (next.isEmpty()) {
-						break;
-					}
-					BPMNNode last = route.get(route.size() - 1);
-					for (BPMNEdge to : getOutEdges(last)) {
-						if (to.getTarget() == next.peek()) {
-							break stepBack;
-						}
-					}
-					left.add(route.remove(route.size() - 1));	
-				}
-			}
-		}
-		
-		private void addLoop(ArrayList<BPMNNode> stack, BPMNNode start) {
-			loops.add(new Loop(new ArrayList<BPMNNode>(stack.subList(stack.indexOf(start), stack.size()))));
-		}
-		
-		class Loop {
-			ArrayList<BPMNNode> loop = new ArrayList<>();
-			
-			public Loop(ArrayList<BPMNNode> loop) {
-				this.loop = loop;
-				
-				unloop();
-			}
-			
-			public void unloop () {
-				for (BPMNEdge edge : getInEdges(getStartNode())) {
-					if (loop.contains(edge.getSource())) {
-						System.out.println("Remove: " +  getStartNode().getLabel() + " - " + edge.getSource());
-						removeEdge(edge);
-					}
-				}
-			}
-			
-			public BPMNNode getStartNode() {
-				for (BPMNNode node : loop) {
-					if (node instanceof Gateway && !isSplitingNode(node)) {
-						for (BPMNEdge inEdge : getInEdges(node)) {
-							if (!loop.contains(inEdge.getSource())) {
-								return node;
-							}
-						}
-					}
-				}
-				System.out.println("Loop is wrong");
-				return null;
-			}
-			
-			public String toString() {
-				String string = "Loop: (";
-				
-				for (BPMNNode node : loop) {
-					string += node.getLabel() + ", ";
-				}
-				
-				// string += ". startNode = " + getStartNode().getLabel();
-				
-				return string + ")\n";
-			}
-		}
-		
-		
-		public String toString() {
-			String string = "Loops: {";
-			
-			for (Loop loop : loops) {
-				string += loop;
-			}
-						
-			return string + "}\n";
-		}
-			
-	}
-
 	
+	private Set<Loop> loops = new HashSet<>();
+		
+	private void flatLoops() throws InvalidLoopException {
+		findLoops();
+		
+		for (Loop loop : loops) {
+			loop.removeLoopingEdge();
+		}
+	}
+	
+	private void restoreLoops() {		
+		for (Loop loop : loops) {
+			loop.restoreLoopingEdge();
+		}
+	}	
+		
+	private void findLoops() throws InvalidLoopException {				
+		ArrayList<BPMNNode> route = new ArrayList<>();
+		
+		Stack<BPMNNode> next = new Stack<>();
+		next.add(source);
+		
+		Set<BPMNNode> left = new HashSet<>();
+		Set<BPMNNode> visited = new HashSet<>();
+		
+		while (!next.isEmpty()) {
+			route.add(next.peek());
+			
+			boolean stepBack = true;
+			// System.out.println("Entered: " + route.get(route.size() - 1).getLabel());
+			for (BPMNEdge edge :  getOutEdges(next.pop())) {
+				BPMNNode to = (BPMNNode)edge.getTarget();
+				if (visited.add(to)) {
+					stepBack = false;
+					next.add(to);
+				} else {
+					if (!left.contains(to)) {
+						loops.add(new Loop(
+								  new ArrayList<BPMNNode>(route.subList(route.indexOf(to), route.size()
+										  ))));
+					}
+				}
+			}
+			
+			stepBack: while (!next.isEmpty()) {
+				BPMNNode last = route.get(route.size() - 1);
+				for (BPMNEdge to : getOutEdges(last)) {
+					if (to.getTarget() == next.peek()) {
+						break stepBack;
+					}
+				}
+				left.add(route.remove(route.size() - 1));	
+			}
+		}
+	}	
+	
+	private class Loop {
+		ArrayList<BPMNNode> loop = new ArrayList<>();
+		private BPMNNode startNode;
+		private BPMNNode endNode;
+		private BPMNNode loopingNode; // Edge from it to startNode repeats loop
+		private String loopingEdgeLabel;
+		
+		public Loop(ArrayList<BPMNNode> loop) throws InvalidLoopException {
+			this.loop = loop;
+			
+			if (!verifyLoop()) {
+				throw new InvalidLoopException();
+			}
+		}
+		
+		public void removeLoopingEdge () {
+			for (BPMNEdge edge : getOutEdges(loopingNode)) {
+				if (edge.getTarget() == startNode) {
+					loopingEdgeLabel = edge.getLabel();
+					removeEdge(edge);
+					return;
+				}
+			}
+		}
+		
+		public void restoreLoopingEdge () {
+			addFlow(loopingNode, startNode, loopingEdgeLabel);
+		}
+		
+		public boolean verifyLoop() {
+			for (BPMNNode node : loop) {
+				if (node instanceof Gateway) {
+					Gateway gateway = (Gateway)node;
+					
+					switch (gateway.getGatewayType()) {
+						case PARALLEL: // Merging Node
+							if (!checkMergingNode(node)) {
+								return false;
+							}
+							break;
+						case DATABASED: // Splitting Node
+							if (!checkSplittingNode(node)) {
+								return false;
+							}
+							break;
+					}
+				} else {
+					if (hasOutsideInEdges(node) || hasOutsideOutEdges(node)) {
+						return false;
+					}
+				}
+			}
+			
+			if (startNode == null || endNode == null) {
+				return false;
+			}
+			
+			return true;
+		}
+		
+		private boolean hasOutsideInEdges(BPMNNode node) {
+			for (BPMNEdge inEdge : getInEdges(node)) {
+				if (!loop.contains(inEdge.getSource())) {
+					return true;
+				}
+			}
+			return false;
+		}
+		
+		private boolean hasOutsideOutEdges(BPMNNode node) {
+			for (BPMNEdge outEdge : getOutEdges(node)) {
+				if (!loop.contains(outEdge.getTarget())) {
+					return true;
+				}
+			}
+			return false;
+		}
+		
+		public boolean checkMergingNode(BPMNNode node) {
+			if (hasOutsideInEdges(node)) {
+				if (this.startNode != null) {
+					return false;
+				}
+				
+				BPMNNode loopingNode = null;
+				for (BPMNEdge inEdge : getInEdges(node)) {
+					BPMNNode inNode = (BPMNNode)inEdge.getSource();
+					if (loop.contains(inNode)) {
+						if (loopingNode == null) {
+							loopingNode = inNode;
+						} else {
+							return false;
+						}
+					}
+				}
+				
+				if (loopingNode == null) {
+					return false;
+				}
+				
+				this.startNode = node;
+				this.loopingNode = loopingNode;
+			}
+			
+			return true;
+		}
+		
+		public boolean checkSplittingNode(BPMNNode node) {
+			if (hasOutsideInEdges(node)) {
+				return false;
+			}
+			
+			if (hasOutsideOutEdges(node)) {
+				if (this.endNode != null) {
+					return false;
+				}
+				
+				Boolean outNodesCondition = null;
+				
+				for (BPMNEdge outEdge : getOutEdges(node)) {
+					boolean isNodeOutside = !loop.contains(outEdge.getTarget());
+					boolean currentOutNodeContision = isNodeOutside ? getEdgeBool(outEdge) : !getEdgeBool(outEdge);
+					if (outNodesCondition == null) {
+						outNodesCondition = currentOutNodeContision;
+					} else {
+						if (outNodesCondition != currentOutNodeContision) {
+							return false;
+						}
+					}
+				}
+				
+				this.endNode = node;
+			}
+
+			return true;
+		}
+		
+//		public String toString() {
+//			String string = "Loop: (";
+//			
+//			for (BPMNNode node : loop) {
+//				string += node.getLabel() + ", ";
+//			}
+//			
+//			// string += ". startNode = " + getStartNode().getLabel();
+//			
+//			return string + ")\n";
+//		}
+	}
+	
+	
+//	public String toString() {
+//		String string = "Loops: {";
+//		
+//		for (Loop loop : loops) {
+//			string += loop;
+//		}
+//					
+//		return string + "}\n";
+//	}
 }

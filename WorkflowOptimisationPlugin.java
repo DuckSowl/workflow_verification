@@ -8,7 +8,7 @@ import org.processmining.models.graphbased.directed.bpmn.elements.Activity;
 import org.processmining.models.graphbased.directed.bpmn.elements.Gateway;
 import org.processmining.models.graphbased.directed.bpmn.elements.Gateway.GatewayType;
 
-import course.project.exceptions.LackOfSynchronizationException;
+import course.project.exceptions.WorkflowVerificationException;
 
 
 //public class WorkflowVerification {
@@ -76,12 +76,11 @@ public class WorkflowOptimisationPlugin {
 		
 		System.out.print("\n-----------\n");
 		
-		BPMNDiagram bpmn = testbpmn5();
+		BPMNDiagram bpmn = testbpmn8();
 		
 		Workflow workflow = (Workflow)bpmn;
 		workflow.isWorkflowCorrect();
 		
-		context.log("qqzzwsexdrcftvgybhunjimkijnuhbygvtcrexwz");
 		//InteractionResult result = context.showWizard("Workshop Converter", true, true, null);
 		System.out.print("\n-----------\n");
 		
@@ -90,18 +89,16 @@ public class WorkflowOptimisationPlugin {
 //			System.out.println(node.getLabel());
 //		}
 		
-		workflow.findLoops();
 		workflow.debugPrintLoops();
 		try {
-			workflow.bfsModified();
-		} catch (LackOfSynchronizationException e) {
-			// TODO Auto-generated catch block
+			workflow.verify();
+		} catch (WorkflowVerificationException e) {
 			e.printStackTrace();
 		}
 		
 		workflow.addConditionsToLables();
 		
-		return null;
+		return workflow;
 }	
 	
 	public static BPMNDiagram testbpmn2() {
@@ -178,6 +175,7 @@ public class WorkflowOptimisationPlugin {
 		return bpmn;
 	}
 	
+	// Broken loop example
 	public static Workflow testbpmn5() {
 		Workflow bpmn = new Workflow("new one");
 		Activity ts = bpmn.addActivity("ts");
@@ -206,6 +204,32 @@ public class WorkflowOptimisationPlugin {
 				
 		return bpmn;
 	}
+	
+	    // No exit from loop example
+		public static Workflow testbpmn7() {
+			Workflow bpmn = new Workflow("new one");
+			Activity ts = bpmn.addActivity("ts");
+			Activity b = bpmn.addActivity("B");
+			Activity d = bpmn.addActivity("D");
+			Activity f = bpmn.addActivity("F");
+			Activity h = bpmn.addActivity("H");
+
+			Gateway a = bpmn.addGateway("A", GatewayType.PARALLEL);
+			Gateway c = bpmn.addGateway("C", GatewayType.PARALLEL);
+			Gateway g = bpmn.addGateway("G", GatewayType.DATABASED);
+			
+			bpmn.addFlow(ts, a, "");
+			bpmn.addFlow(a, b, "");
+			bpmn.addFlow(b, c, "");
+			bpmn.addFlow(c, d, "");
+			bpmn.addFlow(d, f, "");
+			bpmn.addFlow(f, g, "");
+			bpmn.addFlow(g, c, "true");
+			bpmn.addFlow(g, h, "false");
+			bpmn.addFlow(h, a, "");
+					
+			return bpmn;
+		}
 	
 	public static Workflow testbpmn3() {
 		Workflow bpmn = new Workflow("new one");
@@ -249,6 +273,36 @@ public class WorkflowOptimisationPlugin {
 //		newbpmn.addFlow(n, n, "");
 		// --------------------
 		
+	}
+	
+	public static Workflow testbpmn8() {
+		Workflow bpmn = new Workflow("new one");
+		Activity ts = bpmn.addActivity("ts");
+		Activity b = bpmn.addActivity("B");
+		Activity d = bpmn.addActivity("D");
+		Activity f = bpmn.addActivity("F");
+		Activity h = bpmn.addActivity("H");
+		Activity j = bpmn.addActivity("J");
+
+
+		Gateway a = bpmn.addGateway("A", GatewayType.PARALLEL);
+		Gateway c = bpmn.addGateway("C", GatewayType.PARALLEL);
+		Gateway g = bpmn.addGateway("G", GatewayType.DATABASED);
+		Gateway i = bpmn.addGateway("I", GatewayType.DATABASED);
+		
+		bpmn.addFlow(ts, a, "");
+		bpmn.addFlow(a, b, "");
+		bpmn.addFlow(b, c, "");
+		bpmn.addFlow(c, d, "");
+		bpmn.addFlow(d, f, "");
+		bpmn.addFlow(f, g, "");
+		bpmn.addFlow(g, c, "true");
+		bpmn.addFlow(g, h, "false");
+		bpmn.addFlow(h, i, "");
+		bpmn.addFlow(i, a, "true");
+		bpmn.addFlow(i, j, "true");
+				
+		return bpmn;
 	}
 }
 

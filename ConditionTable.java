@@ -10,7 +10,7 @@ import com.google.common.collect.Lists;
 
 public class ConditionTable {
 	
-	public LinkedHashMap<Proposition, Tuple<Proposition>> table = new LinkedHashMap<>();
+	public LinkedHashMap<Proposition, Tuple<Proposition, Proposition>> table = new LinkedHashMap<>();
 	public Proposition minProposition;
 	
 	public ConditionTable(Disjunction disjunction) {
@@ -22,11 +22,11 @@ public class ConditionTable {
 			Proposition keyFactor = conjunction.getKeyFactor().trueCopy();
 			for (Proposition proposition : Lists.reverse(conjunction.conjunction)) {
 				Proposition propositionTrueCopy = proposition.trueCopy();
-				table.putIfAbsent(propositionTrueCopy, new Tuple<Proposition>());
+				table.putIfAbsent(propositionTrueCopy, new Tuple<Proposition, Proposition>());
 				if (proposition.isTrue) {				
-					table.get(propositionTrueCopy).positive = keyFactor;
+					table.get(propositionTrueCopy).first = keyFactor;
 				} else {
-					table.get(propositionTrueCopy).negative = keyFactor;
+					table.get(propositionTrueCopy).second = keyFactor;
 				}
 			}
 		}
@@ -38,25 +38,15 @@ public class ConditionTable {
 	
 	public void debugPrintTable() {
 		System.out.println("Cn\t(+)\t(-)");
-		for (Entry<Proposition, Tuple<Proposition>> entry : table.entrySet()) {
+		for (Entry<Proposition, Tuple<Proposition, Proposition>> entry : table.entrySet()) {
 			System.out.println(entry.getKey().toString() + "\t" 
-							 + (entry.getValue().positive != null ? entry.getValue().positive.toString() : "-0-") + "\t"
-							 + (entry.getValue().negative != null ? entry.getValue().negative.toString() : "-0-"));
+							 + (entry.getValue().first != null ? entry.getValue().first.toString() : "-0-") + "\t"
+							 + (entry.getValue().second != null ? entry.getValue().second.toString() : "-0-"));
 		}
 		System.out.println();
 	}
 	
 	public Proposition get(Proposition key, boolean positive) {
-		return positive ? table.get(key).positive : table.get(key).negative;
-	}
-	
-	class Tuple<T> {
-		public T positive;
-		public T negative;
-		
-		public Tuple() {
-			positive = null;
-			negative = null;
-		}
+		return positive ? table.get(key).first : table.get(key).second;
 	}
 }
