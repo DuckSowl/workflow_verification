@@ -5,10 +5,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Map.Entry;
 import java.util.Queue;
 import java.util.Set;
 import java.util.Stack;
 
+import org.processmining.models.graphbased.AbstractGraphElement;
+import org.processmining.models.graphbased.AttributeMap;
 import org.processmining.models.graphbased.directed.bpmn.BPMNDiagramImpl;
 import org.processmining.models.graphbased.directed.bpmn.BPMNEdge;
 import org.processmining.models.graphbased.directed.bpmn.BPMNNode;
@@ -16,36 +19,33 @@ import org.processmining.models.graphbased.directed.bpmn.elements.Activity;
 import org.processmining.models.graphbased.directed.bpmn.elements.Gateway;
 import org.processmining.models.graphbased.directed.bpmn.elements.Gateway.GatewayType;
 
+import course.project.exceptions.LackOfSynchronizationException;
+
 public class Workflow extends BPMNDiagramImpl {
 
-	private BPMNNode source;
-	
 	public Workflow(String label) {
 		super(label);
 	}
+
+	private BPMNNode source;
 	
 	public Activity addActivity(String label) {
 		return addActivity(label, false, false, false, false, false);
 	}
 
 	public boolean isWorkflowCorrect () {
-		System.out.println("0");
-		hasUniqueSource();
-		System.out.println("1");
-		//isAllNodesReachable();
-		System.out.println("2");
-		checkingGateways();
-		System.out.println("3");
-		return (hasUniqueSource() &&
-				//isAllNodesReachable() &&
+		return (isSourceUnique() &&
+				isAllNodesReachable() &&
 				checkingGateways());
 	}
 	
-	private boolean hasUniqueSource() {
+	/** */
+	private boolean isSourceUnique() {
 		findSource();
 		return source != null;
 	}
 	
+	/** Finds and sets one and only one workflow source */
 	private void findSource() {
 		BPMNNode possibleSource = null;
 		
@@ -62,8 +62,9 @@ public class Workflow extends BPMNDiagramImpl {
 		source = possibleSource;
 	}
 	
+	
 	private boolean isAllNodesReachable() {
-		Set<BPMNNode> unvisited = getNodes();
+		Set<BPMNNode> unvisitedNodes = getNodes();
 		Stack<BPMNNode> stack = new Stack<>();
 		stack.push(source);
 		
@@ -72,8 +73,8 @@ public class Workflow extends BPMNDiagramImpl {
 			for (BPMNEdge edge : getOutEdges(node)) {
 				stack.push((BPMNNode)edge.getTarget());
 			}
-			if (unvisited.remove(node)) {
-				if (unvisited.isEmpty()) {
+			if (unvisitedNodes.remove(node)) {
+				if (unvisitedNodes.isEmpty()) {
 					return true;
 				}
 			}
@@ -119,7 +120,7 @@ public class Workflow extends BPMNDiagramImpl {
 	
 	// ABC
 	
-	HashMap<BPMNNode, Integer> num = new HashMap<>();
+	HashMap<BPMNNode, Integer> splitNodeNum = new HashMap<>();
 	
 	HashMap<BPMNNode, Disjunction> Cn = new HashMap<>();
 	HashMap<BPMNEdge<BPMNNode, BPMNNode>, Disjunction> Cf = new HashMap<>();
@@ -132,30 +133,78 @@ public class Workflow extends BPMNDiagramImpl {
 		return Cf.get(edge);
 	}
 	
-	public void alg(BPMNNode node) {
+	private void setLabel(AbstractGraphElement element, String label) {
+		element.getAttributeMap().put(AttributeMap.LABEL, label);
+	}
+	
+	private void appendToLable(AbstractGraphElement element, String ending) {
+		setLabel(element, element.getLabel() + ending);
+	}
+	
+	public void addConditionsToLables() {
+		for (Entry<BPMNNode, Disjunction> entry : Cn.entrySet()) {
+			appendToLable(entry.getKey(), ", Cn=" + entry.getValue().toString());
+		}
+		
+		// for (Entry<BPMNEdge<BPMNNode, BPMNNode>, Disjunction> entry : Cf.entrySet()) {
+		//     appendToLable(entry.getKey(), ", Cf=" + entry.getValue().toString());
+		// }
+	}
+	
+	/** Calculates condition for node according to incoming edges.
+	 *  Checks if 'node' have structural conflicts (deadlock or lack of synchronization
+	 *  If node does't have structural conflicts calculates conditions for out edges. */
+	public void verifyStructuralConflicts(BPMNNode node) {
 		if (node == source) { 
 			Cn.put(node, new Disjunction());
 			
 			for (BPMNEdge to : getOutEdges(node)) {
 				Cf.put(to, new Disjunction());
 			}	
-		}
-		else {
-			if (node instanceof Activity || isSplitingNode(node)) {
-				if (getInEdges(node).size() > 1) {
-					Iterator<BPMNEdge<? extends BPMNNode, ? extends BPMNNode>> it = getInEdges(node).iterator();
-					Disjunction newCn = new Disjunction(getCondition((BPMNEdge)it.next()));
-					while (it.hasNext()) {
-	//					BPMNNode tempBpmnNode = (BPMNNode)(((BPMNEdge)it).getSource());
-	//					System.out.println("node: " + node.getLabel() + ", from: " + tempBpmnNode.getLabel());
-						if (newCn.isDeadlock(getCondition((BPMNEdge)it.next()))) {
-							System.out.println("Deadlock in " + node.getLabel());
-							// throw new Exception("Deadlock!");
-						}
+		} else {			
+			Iterator<BPMNEdge<? extends BPMNNode, ? extends BPMNNode>> it = getInEdges(node).iterator();
+			Disjunction nextCondition = getCondition((BPMNEdge)it.next());
+			Disjunction newCondition = new Disjunction(nextCondition);
+			
+			while (it.hasNext()) {
+				nextCondition = getCondition((BPMNEdge)it.next());
+				if (node instanceof Activity || isSplitingNode(node)) {
+					if (newCondition.isDeadlock(nextCondition)) {
+						System.out.println("Deadlock in " + node.getLabel());
+					}
+				} else {
+					if (!newCondition.isSynchronised(nextCondition)) {
+						System.out.println("Not Sync in " + node.getLabel());
 					}
 				}
+				newCondition = newCondition.Union(nextCondition);
 			}
-		}	
+			
+			Cn.put(node, newCondition);			
+			
+			for (BPMNEdge to : getOutEdges(node)) {
+				if (isSplitingNode(node)) {
+					Cf.put(to, newCondition.Union(new Proposition(getNodeNum(node), getEdgeBool(to))));
+				} else {
+					Cf.put(to, newCondition);
+				}
+			}
+		}
+	}
+	
+	/** Returns number of a splitting node */
+	private int getNodeNum(BPMNNode node) {
+		return splitNodeNum.get(node);
+	}
+	
+	/** Adds next number for a splitting node in num */
+	private void addNodeNum(BPMNNode node, int number) {
+		splitNodeNum.put(node, number);
+	}
+	
+	/** Returns splitting edge condition in boolean */
+	private boolean getEdgeBool(BPMNEdge edge) {
+		return edge.getLabel() == "true";
 	}
 	
 	public boolean isSplitingNode(BPMNNode node) {
@@ -169,8 +218,7 @@ public class Workflow extends BPMNDiagramImpl {
 		System.out.print(s);
 	}
 	
-	public void bfsModified() {
-		debug("bfsModified");
+	public void bfsModified() throws LackOfSynchronizationException {
 		HashSet<BPMNNode> visitedNodes = new HashSet<>();
 		HashSet<BPMNEdge<BPMNNode, BPMNNode>> visitedEdges = new HashSet<>();
 
@@ -193,15 +241,6 @@ public class Workflow extends BPMNDiagramImpl {
 				}
 			}
 			
-			// alg(node);
-//			try {
-//			
-//			} catch (Exception e) {
-//				System.out.println(e);
-//				System.out.println("Deadlock!");
-//			}
-			debug(" -> " + node.getLabel());
-			
 			visitedNodes.add(node);
 			for (BPMNEdge to : getOutEdges(node)) {
 				visitedEdges.add(to);
@@ -209,10 +248,10 @@ public class Workflow extends BPMNDiagramImpl {
 			}
 			
 			if (isSplitingNode(node)) {
-				num.put(node, index++);
-				
-				debug("(" + (index - 1) + ")");
+				addNodeNum(node, index++);
 			}
+			
+			verifyStructuralConflicts(node);
 		}
 		
 		debug(" done\n");
@@ -263,21 +302,8 @@ public class Workflow extends BPMNDiagramImpl {
 					}
 					left.add(route.remove(route.size() - 1));	
 				}
-				
-//				if (stepBack) {
-//					System.out.println("Left: " + route.get(route.size() - 1).getLabel());
-//					left.add(route.remove(route.size() - 1));	
-//				}
 			}
-			
-			// System.out.println("Loops found: " + loops.size());	
 		}
-		
-//		private void removeLoops() {
-//			for (Loop loop : loops) {
-//				
-//			}
-//		}
 		
 		private void addLoop(ArrayList<BPMNNode> stack, BPMNNode start) {
 			loops.add(new Loop(new ArrayList<BPMNNode>(stack.subList(stack.indexOf(start), stack.size()))));
