@@ -1,7 +1,3 @@
 package course.project.exceptions;
 
-public class InvalidLoopException extends WorkflowVerificationException {
-	public InvalidLoopException() {
-		super("");
-	}
-}
+public class InvalidLoopException extends WorkflowException { }
