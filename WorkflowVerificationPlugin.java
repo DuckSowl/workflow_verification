@@ -1,5 +1,8 @@
 package course.project;
 
+import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+
 import org.processmining.contexts.uitopia.annotations.UITopiaVariant;
 import org.processmining.framework.plugin.PluginContext;
 import org.processmining.framework.plugin.annotations.Plugin;
@@ -27,21 +30,26 @@ public class WorkflowVerificationPlugin {
     )
     public static BPMNDiagram method(PluginContext context, BPMNDiagram bpmn) {
 
-        Workflow workflow = new Workflow(bpmn);
-
+        Workflow workflow = new Workflow(bpmn);     
+    	    	  
         try {
             workflow.verify();
             workflow.addConditionsToLables();
         } catch (IncorrectWorkflowException e) {
-            System.out.println("Incorrect workflow.");
+            showMessage("Incorrect workflow.");
         } catch (InvalidLoopException e) {
-            System.out.println("One of loops is invalid.");
+            showMessage("One of loops is invalid.");
         } catch (LackOfSynchronizationException e) {
-            System.out.println("Lack of Synchronisation in " + e.getLable());
+        	showMessage("Lack of Synchronisation in " + e.getLable());
         } catch (DeadlockException e) {
-            System.out.println("Deadlock in " + e.getLable());
+        	showMessage("Deadlock in " + e.getLable());
         } catch (WorkflowException _) { }    
-
+  
+        
         return bpmn;
+    }
+    
+    private static void showMessage(String message) {        
+        JOptionPane.showMessageDialog(new JFrame(), message);
     }
 }
