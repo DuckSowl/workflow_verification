@@ -103,8 +103,8 @@ public class Workflow {
     protected Boolean checkGetEdgeBool(BPMNEdge edge) {
         String edgeLable = edge.getLabel();
 
-        return edgeLable.contentEquals("true") ? true :
-                edgeLable.contentEquals("false") ? false : null;
+        return edgeLable.equals("true") ? Boolean.TRUE :
+               edgeLable.equals("false") ? Boolean.FALSE : null;
     }
 
     /**
@@ -342,7 +342,6 @@ public class Workflow {
 
         while (!next.isEmpty()) {
             route.add(next.peek());
-            System.out.println(route.get(route.size() - 1));
             for (BPMNEdge edge : diagram.getOutEdges(next.pop())) {
                 BPMNNode to = (BPMNNode) edge.getTarget();
                 if (visited.add(to)) {
